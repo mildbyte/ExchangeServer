@@ -1,4 +1,5 @@
 import java.net.ServerSocket
+import java.util.Currency
 import scala.collection.mutable.Map
 import scala.actors.Actor.{actor, loop, react}
 
@@ -27,7 +28,7 @@ class Server (port: Int) {
   users += ("test" -> new UserData("test", 100.0, Map()))
   users += ("test2" -> new UserData("test", 0.0, Map("AAPL" -> 10)))
 
-  def tryLogin(connectionId: Int, username: String, password: String) =
+  private def tryLogin(connectionId: Int, username: String, password: String) =
     if (
       (usernamesMap contains connectionId) ||
         (connectionsMap contains username) ||
@@ -39,14 +40,41 @@ class Server (port: Int) {
       LoginSuccess()
     }
 
-  def logout(connectionId: Int) {
+  private def logout(connectionId: Int) {
     if (usernamesMap contains connectionId) {
       connectionsMap.remove(usernamesMap(connectionId))
       usernamesMap.remove(connectionId)
     }
   }
 
-  def matchOrders() {
+  private def tryCancel(orderId: Int, username: String) =
+    if (!(orderBook contains orderId)) CancelFailure()
+    else {
+      val order = orderBook(orderId)
+      if (order.username != username) CancelFailure()
+      else {
+        orderBook.remove(orderId)
+        CancelSuccess()
+      }
+    }
+
+  private def tryBuy(amount: Int, price: Double, userData: UserData, username: String, ticker: String) =
+    if (amount * price > userData.balance) OrderFailure()
+    else {
+      orderBook += (lastOrderId -> new Order(lastOrderId, username, ticker, amount, price, BuyOrder))
+      lastOrderId += 1
+      OrderSuccess(lastOrderId - 1)
+    }
+
+  private def trySell(userData: UserData, ticker: String, amount: Int, username: String, price: Double) =
+    if (!(userData.assets contains ticker) || userData.assets(ticker) < amount) OrderFailure()
+    else {
+      orderBook += (lastOrderId -> new Order(lastOrderId, username, ticker, amount, price, SellOrder))
+      lastOrderId += 1
+      OrderSuccess(lastOrderId - 1)
+    }
+
+  private def matchOrders() {
     //Organize orders per-commodity
     val buys, sells = Map[String, Set[Order]]()
 
@@ -122,27 +150,9 @@ class Server (port: Int) {
               command match {
                 case Balance() => BalanceMessage(userData.balance)
                 case Orders() => ClientOrdersList(orderBook.values.filter(o => o.username == username))
-                case Buy(ticker, amount, price) =>
-                  if (amount * price > userData.balance) OrderFailure() else {
-                    orderBook += (lastOrderId -> new Order(lastOrderId, username, ticker, amount, price, BuyOrder))
-                    lastOrderId += 1
-                    OrderSuccess(lastOrderId - 1)
-                  }
-                case Sell(ticker, amount, price) =>
-                  if (!(userData.assets contains ticker) || userData.assets(ticker) < amount) OrderFailure() else {
-                    orderBook += (lastOrderId -> new Order(lastOrderId, username, ticker, amount, price, SellOrder))
-                    lastOrderId += 1
-                    OrderSuccess(lastOrderId - 1)
-                  }
-                case Cancel(orderId) => {
-                  if (!(orderBook contains orderId)) CancelFailure() else {
-                    val order = orderBook(orderId)
-                    if (order.username != username) CancelFailure() else {
-                      orderBook.remove(orderId)
-                      CancelSuccess()
-                    }
-                  }
-                }
+                case Buy(ticker, amount, price) => tryBuy(amount, price, userData, username, ticker)
+                case Sell(ticker, amount, price) => trySell(userData, ticker, amount, username, price)
+                case Cancel(orderId) => tryCancel(orderId, username)
               }
             }
           }
