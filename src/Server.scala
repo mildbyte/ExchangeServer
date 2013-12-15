@@ -1,19 +1,9 @@
 import java.net.ServerSocket
-import java.util.Currency
 import scala.collection.mutable.Map
 import scala.actors.Actor.{actor, loop, react}
 
 class UserData(var password: String, var balance: Double, val assets: Map[String, Int])
 //Assets: stock ticker -> amount held
-
-object OrderType extends Enumeration {
-  type OrderType = Value
-  val BuyOrder, SellOrder = Value
-}
-
-//TODO: discrete tick size (problems with FP precicion otherwise)
-import OrderType._
-class Order(val id: Int, val username: String, val ticker: String, var amount: Int, val price: Double, val orderType: OrderType)
 
 class Server (port: Int) {
   val handlersMap = Map[Int, ClientHandler]() //connection ID -> handler thread
@@ -21,8 +11,6 @@ class Server (port: Int) {
   val connectionsMap = Map[String, Int]()     //username -> connection ID
   val users = Map[String, UserData]()         //username -> password, balance, assets
   var lastConnectionId = 0                    //Each connection has a unique ID
-  var lastOrderId = 0                         //Each order has a unique ID
-  val orderBook = Map[Int, Order]()           //order ID -> order data
 
   //Add some test users
   users += ("test" -> new UserData("test", 100.0, Map()))
@@ -47,96 +35,21 @@ class Server (port: Int) {
     }
   }
 
-  private def tryCancel(orderId: Int, username: String) =
-    if (!(orderBook contains orderId)) CancelFailure()
-    else {
-      val order = orderBook(orderId)
-      if (order.username != username) CancelFailure()
-      else {
-        orderBook.remove(orderId)
-        CancelSuccess()
-      }
-    }
-
-  private def tryBuy(amount: Int, price: Double, userData: UserData, username: String, ticker: String) =
-    if (amount * price > userData.balance) OrderFailure()
-    else {
-      orderBook += (lastOrderId -> new Order(lastOrderId, username, ticker, amount, price, BuyOrder))
-      lastOrderId += 1
-      OrderSuccess(lastOrderId - 1)
-    }
-
-  private def trySell(userData: UserData, ticker: String, amount: Int, username: String, price: Double) =
-    if (!(userData.assets contains ticker) || userData.assets(ticker) < amount) OrderFailure()
-    else {
-      orderBook += (lastOrderId -> new Order(lastOrderId, username, ticker, amount, price, SellOrder))
-      lastOrderId += 1
-      OrderSuccess(lastOrderId - 1)
-    }
-
-  private def matchOrders() {
-    //Organize orders per-commodity
-    val buys, sells = Map[String, Set[Order]]()
-
-    for (order <- orderBook.values) {
-      if (order.orderType == BuyOrder) {
-        if (!(buys contains order.ticker)) buys += (order.ticker -> Set())
-        buys(order.ticker) += order
-      } else {
-        if (!(sells contains order.ticker)) sells += (order.ticker -> Set())
-        sells(order.ticker) += order
-      }
-    }
-
-    for (ticker <- buys.keys if sells contains ticker) {
-      var bids = buys(ticker).toList.sortBy(o => o.price).reverse
-      var asks = sells(ticker).toList.sortBy(o => o.price).reverse
-
-      while (bids.nonEmpty && asks.nonEmpty && bids.head.price >= asks.head.price) {
-        val bid = bids.head
-        val ask = asks.head
-        val bidUser = users(bid.username)
-        val askUser = users(ask.username)
-
-        val amount = bid.amount min ask.amount
-        val price = (bid.price + ask.price) / 2.0
-
-        //Update the users' balances (TODO: freeze balances when placing an order?
-        bidUser.balance -= price * amount
-        askUser.balance += price * amount
-
-        //Update the users' assets (TODO: freeze assets when placing an order?
-        if (!(bidUser.assets contains bid.ticker)) bidUser.assets(bid.ticker) = 0
-        bidUser.assets(bid.ticker) += amount
-        askUser.assets(bid.ticker) -= amount
-        if (askUser.assets(bid.ticker) == 0) askUser.assets.remove(bid.ticker)
-
-        //Notify the users about the execution (partial or not) if they are online
-        if (connectionsMap contains bid.username)
-          handlersMap(connectionsMap(bid.username)) ! Executed(bid.id, amount, price)
-        if (connectionsMap contains ask.username)
-          handlersMap(connectionsMap(ask.username)) ! Executed(ask.id, amount, price)
-
-        //Update the order amounts (order book is updated automatically)
-        bid.amount -= amount
-        ask.amount -= amount
-
-        //If an order has been completely filled, remove it from the order book.
-        if (bid.amount == 0) {
-          orderBook.remove(bid.id)
-          bids = bids.tail
-        }
-
-        if (ask.amount == 0) {
-          orderBook.remove(ask.id)
-          asks = asks.tail
-        }
-      }
-    }
-  }
-
   def start() {
     val listener = new ServerSocket(port)
+
+    //Relays messages directed to a username to the relevant handler thread, if it exists
+    val clientRouter = actor {
+      loop {
+        react {
+          case (username: String, message: ServerMessage) => if (connectionsMap contains username) {
+            handlersMap(connectionsMap(username)) ! message
+          }
+        }
+      }
+    }
+
+    val orderBook = new OrderBook(users, clientRouter)
 
     val serverActor = actor {
       loop {
@@ -149,10 +62,10 @@ class Server (port: Int) {
               val userData = users(username)
               command match {
                 case Balance() => BalanceMessage(userData.balance)
-                case Orders() => ClientOrdersList(orderBook.values.filter(o => o.username == username))
-                case Buy(ticker, amount, price) => tryBuy(amount, price, userData, username, ticker)
-                case Sell(ticker, amount, price) => trySell(userData, ticker, amount, username, price)
-                case Cancel(orderId) => tryCancel(orderId, username)
+                case Orders() => ClientOrdersList(orderBook.getOrdersList(username))
+                case Buy(ticker, amount, price) => orderBook.tryBuy(amount, price, userData, username, ticker)
+                case Sell(ticker, amount, price) => orderBook.trySell(userData, ticker, amount, username, price)
+                case Cancel(orderId) => orderBook.tryCancel(orderId, username)
               }
             }
           }
@@ -165,7 +78,7 @@ class Server (port: Int) {
     actor {
       while(true) {
         Thread.sleep(1000)
-        matchOrders()
+        orderBook.matchOrders()
       }
     }
 
