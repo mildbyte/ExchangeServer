@@ -7,6 +7,8 @@ case class Login(username: String, password: String) extends ClientCommand
 case class Logout() extends ClientCommand
 case class Balance() extends ClientCommand
 case class Orders() extends ClientCommand
+case class LastPrice(ticker: String) extends ClientCommand
+case class HeldAmount(ticker: String) extends ClientCommand
 
 object ClientCommand {
   def parse(command: String) = {
@@ -19,6 +21,8 @@ object ClientCommand {
       case "LOGOUT"  => Logout()
       case "BALANCE" => Balance()
       case "ORDERS"  => Orders()
+      case "PRICE"   => LastPrice(tokens(1))
+      case "ASSETS"  => HeldAmount(tokens(1))
       case _         => None
     } catch {
       case ex: NumberFormatException => None

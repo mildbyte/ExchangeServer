@@ -11,8 +11,11 @@ import OrderType._
 class Order(val id: Int, val username: String, val ticker: String, var amount: Int, val price: Double, val orderType: OrderType)
 
 class OrderBook(users: Map[String, UserData], routerActor: Actor) {
-  val orderBook = Map[Int, Order]() //order ID -> order data
-  var lastOrderId = 0               //Each order has a unique ID
+  private val orderBook = Map[Int, Order]()     //order ID -> order data
+  private val lastPrice = Map[String, Double]() //last executed price
+  private var lastOrderId = 0                   //Each order has a unique ID
+
+  def getLastPrice(ticker: String) = lastPrice.get(ticker)
 
   def tryCancel(orderId: Int, username: String) =
     if (!(orderBook contains orderId)) CancelFailure()
@@ -26,7 +29,7 @@ class OrderBook(users: Map[String, UserData], routerActor: Actor) {
     }
 
   def tryBuy(amount: Int, price: Double, userData: UserData, username: String, ticker: String) =
-    if (amount * price > userData.balance) OrderFailure()
+    if (amount <= 0 || price <= 0 || amount * price > userData.balance) OrderFailure()
     else {
       orderBook += (lastOrderId -> new Order(lastOrderId, username, ticker, amount, price, BuyOrder))
       lastOrderId += 1
@@ -34,7 +37,7 @@ class OrderBook(users: Map[String, UserData], routerActor: Actor) {
     }
 
   def trySell(userData: UserData, ticker: String, amount: Int, username: String, price: Double) =
-    if (!(userData.assets contains ticker) || userData.assets(ticker) < amount) OrderFailure()
+    if (amount <= 0 || price <= 0 || !(userData.assets contains ticker) || userData.assets(ticker) < amount) OrderFailure()
     else {
       orderBook += (lastOrderId -> new Order(lastOrderId, username, ticker, amount, price, SellOrder))
       lastOrderId += 1
@@ -98,6 +101,9 @@ class OrderBook(users: Map[String, UserData], routerActor: Actor) {
           orderBook.remove(ask.id)
           asks = asks.tail
         }
+
+        //Update the last price at which the stock was traded
+        lastPrice += (ticker -> price)
       }
     }
   }

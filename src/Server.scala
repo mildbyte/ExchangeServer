@@ -66,6 +66,9 @@ class Server (port: Int) {
                 case Buy(ticker, amount, price) => orderBook.tryBuy(amount, price, userData, username, ticker)
                 case Sell(ticker, amount, price) => orderBook.trySell(userData, ticker, amount, username, price)
                 case Cancel(orderId) => orderBook.tryCancel(orderId, username)
+                case LastPrice(ticker) => LastTradedPrice(orderBook.getLastPrice(ticker))
+                case HeldAmount(ticker) =>
+                  HeldAssetsMessage(if (userData.assets contains ticker) userData.assets(ticker) else 0)
               }
             }
           }

@@ -23,3 +23,12 @@ case class ClientOrdersList(orders: Iterable[Order]) extends ServerMessage {
       order.amount + " " + order.ticker + " " + order.price).mkString("\n")
   }
 }
+
+case class LastTradedPrice(price: Option[Double]) extends ServerMessage {
+  override def toString = price match {
+    case Some(p) => p toString
+    case None    => "NONE"
+  }
+}
+
+case class HeldAssetsMessage(amount: Int) extends ServerMessage {override def toString = amount toString}
