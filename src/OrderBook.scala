@@ -28,6 +28,15 @@ class OrderBook(users: Map[String, UserData], routerActor: Actor) {
       if (order.username != username) CancelFailure()
       else {
         orderBook.remove(orderId)
+        //Credit the frozen balance/assets back to the account
+        val user = users(username)
+        if (order.orderType == OrderType.BuyOrder) {
+          user.balance += order.price * order.amount
+        } else {
+          //TODO: use a default value map for assets?
+          if (!(user.assets contains order.ticker)) user.assets += (order.ticker -> 0)
+          users(username).assets(order.ticker) += order.amount
+        }
         CancelSuccess()
       }
     }
@@ -36,6 +45,7 @@ class OrderBook(users: Map[String, UserData], routerActor: Actor) {
     if (amount <= 0 || price <= 0 || amount * price > userData.balance) OrderFailure()
     else {
       orderBook += (lastOrderId -> new Order(lastOrderId, username, ticker, amount, price, BuyOrder))
+      userData.balance -= amount * price //Freeze the balance
       lastOrderId += 1
       OrderSuccess(lastOrderId - 1)
     }
@@ -44,6 +54,7 @@ class OrderBook(users: Map[String, UserData], routerActor: Actor) {
     if (amount <= 0 || price <= 0 || !(userData.assets contains ticker) || userData.assets(ticker) < amount) OrderFailure()
     else {
       orderBook += (lastOrderId -> new Order(lastOrderId, username, ticker, amount, price, SellOrder))
+      userData.assets(ticker) -= amount //Freeze the asset being sold
       lastOrderId += 1
       OrderSuccess(lastOrderId - 1)
     }
@@ -77,14 +88,15 @@ class OrderBook(users: Map[String, UserData], routerActor: Actor) {
         val amount = bid.amount min ask.amount
         val price = (bid.price + ask.price) / 2.0
 
-        //Update the users' balances (TODO: freeze balances when placing an order?
-        bidUser.balance -= price * amount
+        //Update the users' balances
+        //We already subtracted the bidding price from the bidder's balance, so now we
+        //just need to add back the amount of money saved on the trade from the bid-ask spread
+        bidUser.balance += (bid.price * amount - price * amount)
         askUser.balance += price * amount
 
-        //Update the users' assets (TODO: freeze assets when placing an order?
+        //Update the users' assets (the seller has already had their asset removed)
         if (!(bidUser.assets contains bid.ticker)) bidUser.assets(bid.ticker) = 0
         bidUser.assets(bid.ticker) += amount
-        askUser.assets(bid.ticker) -= amount
         if (askUser.assets(bid.ticker) == 0) askUser.assets.remove(bid.ticker)
 
         //Notify the users about the execution (partial or not) if they are online
