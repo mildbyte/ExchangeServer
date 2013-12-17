@@ -17,6 +17,10 @@ class OrderBook(users: Map[String, UserData], routerActor: Actor) {
 
   def getLastPrice(ticker: String) = lastPrice.get(ticker)
 
+  def removeUser(username: String) {
+    for ((id, order) <- orderBook if (order.username == username)) orderBook remove id
+  }
+
   def tryCancel(orderId: Int, username: String) =
     if (!(orderBook contains orderId)) CancelFailure()
     else {

@@ -2,7 +2,7 @@ import java.net.ServerSocket
 import scala.collection.mutable.Map
 import scala.actors.Actor.{actor, loop, react}
 
-class UserData(var password: String, var balance: Double, val assets: Map[String, Int])
+class UserData(var isAdmin: Boolean, var password: String, var balance: Double, val assets: Map[String, Int])
 //Assets: stock ticker -> amount held
 
 class Server (port: Int) {
@@ -13,8 +13,9 @@ class Server (port: Int) {
   var lastConnectionId = 0                    //Each connection has a unique ID
 
   //Add some test users
-  users += ("test" -> new UserData("test", 100.0, Map()))
-  users += ("test2" -> new UserData("test", 0.0, Map("AAPL" -> 10)))
+  users += ("test" -> new UserData(false, "test", 100.0, Map()))
+  users += ("test2" -> new UserData(false, "test", 0.0, Map("AAPL" -> 10)))
+  users += ("root" -> new UserData(true, "root", 0.0, Map()))
 
   private def tryLogin(connectionId: Int, username: String, password: String) =
     if (
@@ -60,6 +61,7 @@ class Server (port: Int) {
             if (!(usernamesMap contains connectionId)) LoginFailure() else {
               val username = usernamesMap(connectionId)
               val userData = users(username)
+              if (command.isInstanceOf[AdminCommand] && !userData.isAdmin) LoginFailure() else
               command match {
                 case Balance() => BalanceMessage(userData.balance)
                 case Orders() => ClientOrdersList(orderBook.getOrdersList(username))
@@ -69,6 +71,29 @@ class Server (port: Int) {
                 case LastPrice(ticker) => LastTradedPrice(orderBook.getLastPrice(ticker))
                 case HeldAmount(ticker) =>
                   HeldAssetsMessage(if (userData.assets contains ticker) userData.assets(ticker) else 0)
+                case AddUser(username, password) =>
+                  if (users contains username) LoginFailure() else {
+                    users += (username -> new UserData(false, password, 0.0, Map()))
+                    LoginSuccess() //TODO: change usage of LoginFailure and LoginSuccess to AdminFailure etc
+                  }
+                case RemoveUser(username) =>
+                  if (!(users contains username) || (connectionsMap contains username)) LoginFailure() else {
+                    //TODO: no way to kick a user out of the server
+                    users remove username
+                    orderBook removeUser username
+                    LoginSuccess()
+                  }
+                case ChangeUserBalance(username, balance) =>
+                  if (!(users contains username)) LoginFailure() else {
+                    users(username).balance = balance
+                    LoginSuccess()
+                  }
+                case SetUserAssets(username, ticker, amount) =>
+                  if (!(users contains username)) LoginFailure() else {
+                    users(username).assets += (ticker -> amount)
+                    if (amount == 0) users(username).assets.remove(ticker)
+                    LoginSuccess()
+                  }
               }
             }
           }
