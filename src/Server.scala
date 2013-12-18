@@ -72,27 +72,27 @@ class Server (port: Int) {
                 case HeldAmount(ticker) =>
                   HeldAssetsMessage(if (userData.assets contains ticker) userData.assets(ticker) else 0)
                 case AddUser(username, password) =>
-                  if (users contains username) LoginFailure() else {
+                  if (users contains username) AdminFailure() else {
                     users += (username -> new UserData(false, password, 0.0, Map()))
-                    LoginSuccess() //TODO: change usage of LoginFailure and LoginSuccess to AdminFailure etc
+                    AdminSuccess()
                   }
                 case RemoveUser(username) =>
-                  if (!(users contains username) || (connectionsMap contains username)) LoginFailure() else {
+                  if (!(users contains username) || (connectionsMap contains username)) AdminFailure() else {
                     //TODO: no way to kick a user out of the server
                     users remove username
                     orderBook removeUser username
-                    LoginSuccess()
+                    AdminSuccess()
                   }
                 case ChangeUserBalance(username, balance) =>
-                  if (!(users contains username)) LoginFailure() else {
+                  if (!(users contains username)) AdminFailure() else {
                     users(username).balance = balance
-                    LoginSuccess()
+                    AdminSuccess()
                   }
                 case SetUserAssets(username, ticker, amount) =>
-                  if (!(users contains username)) LoginFailure() else {
+                  if (!(users contains username)) AdminFailure() else {
                     users(username).assets += (ticker -> amount)
                     if (amount == 0) users(username).assets.remove(ticker)
-                    LoginSuccess()
+                    AdminSuccess()
                   }
               }
             }

@@ -14,6 +14,9 @@ case class CancelFailure() extends ServerMessage {override def toString = "FAIL"
 case class LoginSuccess() extends ServerMessage {override def toString = "OK"}
 case class LoginFailure() extends ServerMessage {override def toString = "FAIL"}
 
+case class AdminSuccess() extends ServerMessage {override def toString = "OK"}
+case class AdminFailure() extends ServerMessage {override def toString = "FAIL"}
+
 case class BalanceMessage(balance: Double) extends ServerMessage {override def toString = balance toString}
 case class ClientOrdersList(orders: Iterable[Order]) extends ServerMessage {
   override def toString = {
