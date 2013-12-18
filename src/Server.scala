@@ -2,27 +2,33 @@ import java.net.ServerSocket
 import scala.collection.mutable.Map
 import scala.actors.Actor.{actor, loop, react}
 
-class UserData(var isAdmin: Boolean, var password: String, var balance: Double, val assets: Map[String, Int])
+class UserLoginData(var isAdmin: Boolean, var password: String)
+class UserAssetData(var balance: Double, val assets: Map[String, Int])
 //Assets: stock ticker -> amount held
 
 class Server (port: Int) {
-  val handlersMap = Map[Int, ClientHandler]() //connection ID -> handler thread
-  val usernamesMap = Map[Int, String]()       //connection ID -> username
-  val connectionsMap = Map[String, Int]()     //username -> connection ID
-  val users = Map[String, UserData]()         //username -> password, balance, assets
-  var lastConnectionId = 0                    //Each connection has a unique ID
+  val handlersMap = Map[Int, ClientHandler]()   //connection ID -> handler thread
+  val usernamesMap = Map[Int, String]()         //connection ID -> username
+  val connectionsMap = Map[String, Int]()       //username -> connection ID
+  val userAuth = Map[String, UserLoginData]()   //username -> password, permissions
+  val userAssets = Map[String, UserAssetData]() //username -> balance, assets
+  var lastConnectionId = 0                      //Each connection has a unique ID
 
   //Add some test users
-  users += ("test" -> new UserData(false, "test", 100.0, Map()))
-  users += ("test2" -> new UserData(false, "test", 0.0, Map("AAPL" -> 10)))
-  users += ("root" -> new UserData(true, "root", 0.0, Map()))
+  userAuth += ("test" -> new UserLoginData(false, "test"))
+  userAuth += ("test2" -> new UserLoginData(false, "test"))
+  userAuth += ("root" -> new UserLoginData(true, "root"))
+
+  userAssets += ("test" -> new UserAssetData(100.0, Map()))
+  userAssets += ("test2" -> new UserAssetData(0.0, Map("AAPL" -> 10)))
+  userAssets += ("root" -> new UserAssetData(0.0, Map()))
 
   private def tryLogin(connectionId: Int, username: String, password: String) =
     if (
       (usernamesMap contains connectionId) ||
         (connectionsMap contains username) ||
-        !(users contains username) ||
-        (users(username).password != password)) LoginFailure()
+        !(userAuth contains username) ||
+        (userAuth(username).password != password)) LoginFailure()
     else {
       usernamesMap += (connectionId -> username)
       connectionsMap += (username -> connectionId)
@@ -50,7 +56,7 @@ class Server (port: Int) {
       }
     }
 
-    val orderBook = new OrderBook(users, clientRouter)
+    val orderBook = new OrderBook(userAssets, clientRouter)
 
     val serverActor = actor {
       loop {
@@ -60,8 +66,8 @@ class Server (port: Int) {
           case (connectionId: Int, command: ClientCommand) => handlersMap(connectionId) ! {
             if (!(usernamesMap contains connectionId)) LoginFailure() else {
               val username = usernamesMap(connectionId)
-              val userData = users(username)
-              if (command.isInstanceOf[AdminCommand] && !userData.isAdmin) LoginFailure() else
+              val userData = userAssets(username)
+              if (command.isInstanceOf[AdminCommand] && !userAuth(username).isAdmin) LoginFailure() else
               command match {
                 case Balance() => BalanceMessage(userData.balance)
                 case Orders() => ClientOrdersList(orderBook.getOrdersList(username))
@@ -72,26 +78,28 @@ class Server (port: Int) {
                 case HeldAmount(ticker) =>
                   HeldAssetsMessage(if (userData.assets contains ticker) userData.assets(ticker) else 0)
                 case AddUser(username, password) =>
-                  if (users contains username) AdminFailure() else {
-                    users += (username -> new UserData(false, password, 0.0, Map()))
+                  if (userAuth contains username) AdminFailure() else {
+                    userAuth += (username -> new UserLoginData(false, password))
+                    userAssets += (username -> new UserAssetData(0.0, Map()))
                     AdminSuccess()
                   }
                 case RemoveUser(username) =>
-                  if (!(users contains username) || (connectionsMap contains username)) AdminFailure() else {
+                  if (!(userAuth contains username) || (connectionsMap contains username)) AdminFailure() else {
                     //TODO: no way to kick a user out of the server
-                    users remove username
+                    userAuth remove username
+                    userAssets remove username
                     orderBook removeUser username
                     AdminSuccess()
                   }
                 case ChangeUserBalance(username, balance) =>
-                  if (!(users contains username)) AdminFailure() else {
-                    users(username).balance = balance
+                  if (!(userAuth contains username)) AdminFailure() else {
+                    userAssets(username).balance = balance
                     AdminSuccess()
                   }
                 case SetUserAssets(username, ticker, amount) =>
-                  if (!(users contains username)) AdminFailure() else {
-                    users(username).assets += (ticker -> amount)
-                    if (amount == 0) users(username).assets.remove(ticker)
+                  if (!(userAuth contains username)) AdminFailure() else {
+                    userAssets(username).assets += (ticker -> amount)
+                    if (amount == 0) userAssets(username).assets.remove(ticker)
                     AdminSuccess()
                   }
               }

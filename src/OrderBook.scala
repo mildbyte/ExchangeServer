@@ -10,7 +10,7 @@ object OrderType extends Enumeration {
 import OrderType._
 class Order(val id: Int, val username: String, val ticker: String, var amount: Int, val price: Double, val orderType: OrderType)
 
-class OrderBook(users: Map[String, UserData], routerActor: Actor) {
+class OrderBook(usersAssets: Map[String, UserAssetData], routerActor: Actor) {
   private val orderBook = Map[Int, Order]()     //order ID -> order data
   private val lastPrice = Map[String, Double]() //last executed price
   private var lastOrderId = 0                   //Each order has a unique ID
@@ -29,19 +29,19 @@ class OrderBook(users: Map[String, UserData], routerActor: Actor) {
       else {
         orderBook.remove(orderId)
         //Credit the frozen balance/assets back to the account
-        val user = users(username)
+        val user = usersAssets(username)
         if (order.orderType == OrderType.BuyOrder) {
           user.balance += order.price * order.amount
         } else {
           //TODO: use a default value map for assets?
           if (!(user.assets contains order.ticker)) user.assets += (order.ticker -> 0)
-          users(username).assets(order.ticker) += order.amount
+          usersAssets(username).assets(order.ticker) += order.amount
         }
         CancelSuccess()
       }
     }
 
-  def tryBuy(amount: Int, price: Double, userData: UserData, username: String, ticker: String) =
+  def tryBuy(amount: Int, price: Double, userData: UserAssetData, username: String, ticker: String) =
     if (amount <= 0 || price <= 0 || amount * price > userData.balance) OrderFailure()
     else {
       orderBook += (lastOrderId -> new Order(lastOrderId, username, ticker, amount, price, BuyOrder))
@@ -50,7 +50,7 @@ class OrderBook(users: Map[String, UserData], routerActor: Actor) {
       OrderSuccess(lastOrderId - 1)
     }
 
-  def trySell(userData: UserData, ticker: String, amount: Int, username: String, price: Double) =
+  def trySell(userData: UserAssetData, ticker: String, amount: Int, username: String, price: Double) =
     if (amount <= 0 || price <= 0 || !(userData.assets contains ticker) || userData.assets(ticker) < amount) OrderFailure()
     else {
       orderBook += (lastOrderId -> new Order(lastOrderId, username, ticker, amount, price, SellOrder))
@@ -82,8 +82,8 @@ class OrderBook(users: Map[String, UserData], routerActor: Actor) {
       while (bids.nonEmpty && asks.nonEmpty && bids.head.price >= asks.head.price) {
         val bid = bids.head
         val ask = asks.head
-        val bidUser = users(bid.username)
-        val askUser = users(ask.username)
+        val bidUser = usersAssets(bid.username)
+        val askUser = usersAssets(ask.username)
 
         val amount = bid.amount min ask.amount
         val price = (bid.price + ask.price) / 2.0
