@@ -3,7 +3,7 @@ import scala.collection.mutable.Map
 import scala.actors.Actor.{actor, loop, react}
 
 class UserLoginData(var isAdmin: Boolean, var password: String)
-class UserAssetData(var balance: Double, val assets: Map[String, Int])
+class UserAssetData(var balance: BigDecimal, val assets: Map[String, Int])
 //Assets: stock ticker -> amount held
 
 class Server (port: Int) {

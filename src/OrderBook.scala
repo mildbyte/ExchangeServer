@@ -6,13 +6,12 @@ object OrderType extends Enumeration {
   val BuyOrder, SellOrder = Value
 }
 
-//TODO: discrete tick size (problems with FP precicion otherwise)
 import OrderType._
-class Order(val id: Int, val username: String, val ticker: String, var amount: Int, val price: Double, val orderType: OrderType)
+class Order(val id: Int, val username: String, val ticker: String, var amount: Int, val price: BigDecimal, val orderType: OrderType)
 
 class OrderBook(usersAssets: Map[String, UserAssetData], routerActor: Actor) {
   private val orderBook = Map[Int, Order]()     //order ID -> order data
-  private val lastPrice = Map[String, Double]() //last executed price
+  private val lastPrice = Map[String, BigDecimal]() //last executed price
   private var lastOrderId = 0                   //Each order has a unique ID
 
   def getLastPrice(ticker: String) = lastPrice.get(ticker)
@@ -41,7 +40,7 @@ class OrderBook(usersAssets: Map[String, UserAssetData], routerActor: Actor) {
       }
     }
 
-  def tryBuy(amount: Int, price: Double, userData: UserAssetData, username: String, ticker: String) =
+  def tryBuy(amount: Int, price: BigDecimal, userData: UserAssetData, username: String, ticker: String) =
     if (amount <= 0 || price <= 0 || amount * price > userData.balance) OrderFailure()
     else {
       orderBook += (lastOrderId -> new Order(lastOrderId, username, ticker, amount, price, BuyOrder))
@@ -50,7 +49,7 @@ class OrderBook(usersAssets: Map[String, UserAssetData], routerActor: Actor) {
       OrderSuccess(lastOrderId - 1)
     }
 
-  def trySell(userData: UserAssetData, ticker: String, amount: Int, username: String, price: Double) =
+  def trySell(userData: UserAssetData, ticker: String, amount: Int, username: String, price: BigDecimal) =
     if (amount <= 0 || price <= 0 || !(userData.assets contains ticker) || userData.assets(ticker) < amount) OrderFailure()
     else {
       orderBook += (lastOrderId -> new Order(lastOrderId, username, ticker, amount, price, SellOrder))
