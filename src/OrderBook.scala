@@ -32,8 +32,6 @@ class OrderBook(usersAssets: Map[String, UserAssetData], routerActor: Actor) {
         if (order.orderType == OrderType.BuyOrder) {
           user.balance += order.price * order.amount
         } else {
-          //TODO: use a default value map for assets?
-          if (!(user.assets contains order.ticker)) user.assets += (order.ticker -> 0)
           usersAssets(username).assets(order.ticker) += order.amount
         }
         CancelSuccess()
@@ -50,7 +48,7 @@ class OrderBook(usersAssets: Map[String, UserAssetData], routerActor: Actor) {
     }
 
   def trySell(userData: UserAssetData, ticker: String, amount: Int, username: String, price: BigDecimal) =
-    if (amount <= 0 || price <= 0 || !(userData.assets contains ticker) || userData.assets(ticker) < amount) OrderFailure()
+    if (amount <= 0 || price <= 0 || userData.assets(ticker) < amount) OrderFailure()
     else {
       orderBook += (lastOrderId -> new Order(lastOrderId, username, ticker, amount, price, SellOrder))
       userData.assets(ticker) -= amount //Freeze the asset being sold
@@ -62,14 +60,12 @@ class OrderBook(usersAssets: Map[String, UserAssetData], routerActor: Actor) {
 
   def matchOrders() {
     //Organize orders per-commodity
-    val buys, sells = Map[String, Set[Order]]()
+    val buys, sells = Map[String, Set[Order]]().withDefaultValue(Set())
 
     for (order <- orderBook.values) {
       if (order.orderType == BuyOrder) {
-        if (!(buys contains order.ticker)) buys += (order.ticker -> Set())
         buys(order.ticker) += order
       } else {
-        if (!(sells contains order.ticker)) sells += (order.ticker -> Set())
         sells(order.ticker) += order
       }
     }
@@ -94,7 +90,6 @@ class OrderBook(usersAssets: Map[String, UserAssetData], routerActor: Actor) {
         askUser.balance += price * amount
 
         //Update the users' assets (the seller has already had their asset removed)
-        if (!(bidUser.assets contains bid.ticker)) bidUser.assets(bid.ticker) = 0
         bidUser.assets(bid.ticker) += amount
         if (askUser.assets(bid.ticker) == 0) askUser.assets.remove(bid.ticker)
 

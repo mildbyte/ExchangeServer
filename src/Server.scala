@@ -19,9 +19,9 @@ class Server (port: Int) {
   userAuth += ("test2" -> new UserLoginData(false, "test"))
   userAuth += ("root" -> new UserLoginData(true, "root"))
 
-  userAssets += ("test" -> new UserAssetData(100.0, Map()))
-  userAssets += ("test2" -> new UserAssetData(0.0, Map("AAPL" -> 10)))
-  userAssets += ("root" -> new UserAssetData(0.0, Map()))
+  userAssets += ("test" -> new UserAssetData(100.0, Map().withDefaultValue(0)))
+  userAssets += ("test2" -> new UserAssetData(0.0, Map("AAPL" -> 10).withDefaultValue(0)))
+  userAssets += ("root" -> new UserAssetData(0.0, Map().withDefaultValue(0)))
 
   private def tryLogin(connectionId: Int, username: String, password: String) =
     if (
@@ -76,11 +76,11 @@ class Server (port: Int) {
                 case Cancel(orderId) => orderBook.tryCancel(orderId, username)
                 case LastPrice(ticker) => LastTradedPrice(orderBook.getLastPrice(ticker))
                 case HeldAmount(ticker) =>
-                  HeldAssetsMessage(if (userData.assets contains ticker) userData.assets(ticker) else 0)
+                  HeldAssetsMessage(userData.assets(ticker))
                 case AddUser(username, password) =>
                   if (userAuth contains username) AdminFailure() else {
                     userAuth += (username -> new UserLoginData(false, password))
-                    userAssets += (username -> new UserAssetData(0.0, Map()))
+                    userAssets += (username -> new UserAssetData(0.0, Map().withDefaultValue(0)))
                     AdminSuccess()
                   }
                 case RemoveUser(username) =>
